@@ -1,0 +1,118 @@
+# .github/workflows/ci.yml
+#
+# CI/CD: lint -> test -> contract tests -> security scan -> build/push.
+# Each stage gates the next — a failed test blocks a build, a build
+# vulnerability blocks a push. No stage is skippable by design.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check services/ db/
+
+  test-python:
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test_db
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    strategy:
+      matrix:
+        service:
+          - agent-orchestrator
+          - tool-router
+          - wallet-service
+          - ai-reasoning
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r services/${{ matrix.service }}/requirements.txt --break-system-packages
+      - run: pip install -r services/${{ matrix.service }}/requirements-dev.txt --break-system-packages || true
+      - run: pytest services/${{ matrix.service }}/tests/unit -v
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:test@localhost:5432/test_db
+          REDIS_URL: redis://localhost:6379/0
+
+  test-contracts:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+      - run: cd contracts && forge install OpenZeppelin/openzeppelin-contracts --no-commit
+      - run: cd contracts && forge test -vv
+      - run: cd contracts && forge coverage --report summary
+
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: [test-python, test-contracts]
+    steps:
+      - uses: actions/checkout@v4
+      # Python dependency vulnerabilities
+      - run: pip install pip-audit
+      - run: find services -name requirements.txt -exec pip-audit -r {} \;
+      # Solidity static analysis
+      - uses: crytic/slither-action@v0.4.0
+        with:
+          target: "contracts/"
+          fail-on: high
+      # Secret scanning — catches an accidentally-committed private key
+      # before it ever reaches a merged branch.
+      - uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --only-verified
+
+  build-and-push:
+    runs-on: ubuntu-latest
+    needs: security-scan
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        service:
+          - api-gateway
+          - agent-orchestrator
+          - tool-router
+          - wallet-service
+          - ai-reasoning
+          - event-listener
+          - notification-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.CONTAINER_REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: services/${{ matrix.service }}
+          push: true
+          tags: ${{ vars.CONTAINER_REGISTRY }}/${{ matrix.service }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

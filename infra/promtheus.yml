@@ -1,0 +1,61 @@
+# infra/prometheus.yml
+#
+# k8s-native service discovery — earlier version used static
+# docker-compose hostnames, which stop resolving once you're on the
+# k8s manifests in infra/k8s/. Also wires in Alertmanager and the
+# alert rules ConfigMap from infra/k8s/alerting.yaml, which the
+# original version didn't reference at all.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: ${ENVIRONMENT}
+
+rule_files:
+  - /etc/prometheus/rules/rules.yaml   # mounted from the prometheus-alert-rules ConfigMap in infra/k8s/alerting.yaml
+
+alerting:
+  alertmanagers:
+    - kubernetes_sd_configs:
+        - role: pod
+          namespaces: {names: [agentic-defi-platform]}
+      relabel_configs:
+        - source_labels: [__meta_kubernetes_pod_label_app]
+          regex: alertmanager
+          action: keep
+
+scrape_configs:
+  # Auto-discovers every pod in the namespace with a prometheus.io/scrape
+  # annotation — add that annotation to a Deployment's pod template and
+  # it's picked up automatically, no manual target entry needed here.
+  - job_name: kubernetes-pods
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: {names: [agentic-defi-platform]}
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: "true"
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        target_label: app
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+
+  - job_name: otel-collector
+    static_configs:
+      - targets: ["otel-collector:8889"]
+
+  # postgres_exporter / redis_exporter / rabbitmq's built-in Prometheus
+  # plugin need to be deployed as sidecars or separate pods with the
+  # same prometheus.io/scrape annotation above — they're then picked up
+  # by the kubernetes-pods job automatically, no separate job needed.

@@ -1,0 +1,796 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nft
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      POSTGRES_DB: agentic_defi
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql
+    secrets:
+      - db_password
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nft"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server /usr/local/etc/redis/redis.conf
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+      - ./infra/docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  contracts-node:
+    image: node:20-alpine
+    restart: unless-stopped
+    working_dir: /app
+    command: sh -c "npm install && npx hardhat node --hostname 0.0.0.0"
+    ports:
+      - "127.0.0.1:8545:8545"
+    volumes:
+      - ./contracts:/app
+    environment:
+      HARDHAT_CHAIN_ID: 31337
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8545 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER_FILE: /run/secrets/rabbitmq_user
+      RABBITMQ_DEFAULT_PASS_FILE: /run/secrets/rabbitmq_pass
+    secrets:
+      - rabbitmq_user
+      - rabbitmq_pass
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics check_port_connectivity"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - miniodata:/data
+    environment:
+      MINIO_ROOT_USER_FILE: /run/secrets/minio_root_user
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_root_password
+    secrets:
+      - minio_root_user
+      - minio_root_password
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  ipfs:
+    image: ipfs/kubo:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4001:4001"
+      - "127.0.0.1:5001:5001"
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ipfsdata:/data/ipfs
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5001/api/v0/version || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+    volumes:
+      - qdrantdata:/qdrant/storage
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:6333/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  neo4j:
+    image: neo4j:5
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
+    volumes:
+      - neo4jdata:/data
+    environment:
+      NEO4J_AUTH_FILE: /run/secrets/neo4j_auth
+    secrets:
+      - neo4j_auth
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "neo4j status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+
+  traefik:
+    image: traefik:v3.2
+    restart: unless-stopped
+    command:
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.le.acme.tlschallenge=true"
+      - "--certificatesresolvers.le.acme.email=admin@example.com"
+      - "--certificatesresolvers.le.acme.storage=/letsencrypt/acme.json"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.file.filename=/etc/traefik/dynamic.yml"
+      - "--providers.file.watch=true"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - ./infra/traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
+      - letsencrypt:/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - frontend
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "traefik healthcheck || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - prometheusdata:/prometheus
+      - ./observability/metrics/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--web.enable-lifecycle"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./observability/metrics/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./observability/metrics/datasources:/etc/grafana/provisioning/datasources:ro
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD_FILE: /run/secrets/grafana_admin_password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    secrets:
+      - grafana_admin_password
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      - prometheus
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  tempo:
+    image: grafana/tempo:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3200:3200"
+    volumes:
+      - tempodata:/tmp/tempo
+      - ./observability/tracing/tempo.yml:/etc/tempo.yml:ro
+    command: ["-config.file=/etc/tempo.yml"]
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3200/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  loki:
+    image: grafana/loki:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3100:3100"
+    volumes:
+      - lokidata:/loki
+      - ./observability/logging/loki.yml:/etc/loki/local-config.yaml:ro
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  promtail:
+    image: grafana/promtail:latest
+    restart: unless-stopped
+    volumes:
+      - /var/log:/var/log:ro
+      - ./observability/logging/promtail.yml:/etc/promtail/config.yml:ro
+    command: ["-config.file=/etc/promtail/config.yml"]
+    networks:
+      - backend
+    depends_on:
+      - loki
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+
+  api-gateway:
+    build:
+      context: ./apps/api-gateway
+      dockerfile: Dockerfile
+      target: production
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      DATABASE_URL: postgresql://nft:nft@postgres:5432/agentic_defi
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+    secrets:
+      - jwt_secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - frontend
+      - backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api-gateway.rule=PathPrefix(`/api`)"
+      - "traefik.http.routers.api-gateway.entrypoints=websecure"
+      - "traefik.http.routers.api-gateway.tls.certresolver=le"
+      - "traefik.http.services.api-gateway.loadbalancer.server.port=8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      target: production
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: https://localhost/api
+    networks:
+      - frontend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.web.entrypoints=websecure"
+      - "traefik.http.routers.web.tls.certresolver=le"
+      - "traefik.http.services.web.loadbalancer.server.port=3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  agent-orchestrator:
+    build:
+      context: ./services/agent-orchestrator
+      dockerfile: Dockerfile
+      target: production
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://nft:nft@postgres:5432/agentic_defi
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://agent:agent_password@rabbitmq:5672/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  wallet-service:
+    build:
+      context: ./services/wallet-service
+      dockerfile: Dockerfile
+      target: production
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://nft:nft@postgres:5432/agentic_defi
+      REDIS_URL: redis://redis:6379
+      CDP_API_KEY_NAME_FILE: /run/secrets/cdp_api_key_name
+      CDP_API_KEY_PRIVATE_KEY_FILE: /run/secrets/cdp_api_key_private
+    secrets:
+      - cdp_api_key_name
+      - cdp_api_key_private
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  bridging-service:
+    build:
+      context: ./services/bridging-service
+      dockerfile: Dockerfile
+      target: production
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://nft:nft@postgres:5432/agentic_defi
+      REDIS_URL: redis://redis:6379
+      BRIDGE_RPC_URL: http://contracts-node:8545
+      BTC_RPC_URL: ${BTC_RPC_URL:-}
+      BRIDGE_CONTRACT_ADDRESS: ${BRIDGE_CONTRACT_ADDRESS:-}
+      RELAYER_PRIVATE_KEY_FILE: /run/secrets/relayer_private_key
+    secrets:
+      - relayer_private_key
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      contracts-node:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+      target: production
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://nft:nft@postgres:5432/agentic_defi
+      REDIS_URL: redis://redis:6379
+      TWILIO_ACCOUNT_SID_FILE: /run/secrets/twilio_account_sid
+      TWILIO_AUTH_TOKEN_FILE: /run/secrets/twilio_auth_token
+      SENDGRID_API_KEY_FILE: /run/secrets/sendgrid_api_key
+    secrets:
+      - twilio_account_sid
+      - twilio_auth_token
+      - sendgrid_api_key
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  tool-router:
+    build:
+      context: ./services/tool-router
+      dockerfile: Dockerfile
+      target: production
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://nft:nft@postgres:5432/agentic_defi
+      REDIS_URL: redis://redis:6379
+      RPC_URLS: http://contracts-node:8545
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      contracts-node:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  oracle-service:
+    build:
+      context: ./services/oracle-service
+      dockerfile: Dockerfile
+      target: production
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://nft:nft@postgres:5432/agentic_defi
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  event-listener:
+    build:
+      context: ./services/event-listener
+      dockerfile: Dockerfile
+      target: production
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://nft:nft@postgres:5432/agentic_defi
+      REDIS_URL: redis://redis:6379
+      RPC_URL: http://contracts-node:8545
+      RABBITMQ_URL: amqp://agent:agent_password@rabbitmq:5672/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      contracts-node:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  guardrail-service:
+    build:
+      context: ./services/guardrail-service
+      dockerfile: Dockerfile
+      target: production
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://nft:nft@postgres:5432/agentic_defi
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  risk-policy-engine:
+    build:
+      context: ./services/risk-policy-engine
+      dockerfile: Dockerfile
+      target: production
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://nft:nft@postgres:5432/agentic_defi
+      REDIS_URL: redis://redis:6379
+      CHAIN_RPC_URL: http://contracts-node:8545
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+    secrets:
+      - jwt_secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      contracts-node:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  intelligent-asset-service:
+    build:
+      context: ./services/intelligent-asset-service
+      dockerfile: Dockerfile
+      target: production
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://nft:nft@postgres:5432/agentic_defi
+      REDIS_URL: redis://redis:6379
+      QDRANT_URL: http://qdrant:6333
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER_FILE: /run/secrets/neo4j_user
+      NEO4J_PASSWORD_FILE: /run/secrets/neo4j_password
+      IPFS_URL: http://ipfs:5001
+    secrets:
+      - neo4j_user
+      - neo4j_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      ipfs:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+secrets:
+  db_password:
+    file: ./infra/secrets/db_password.txt
+  rabbitmq_user:
+    file: ./infra/secrets/rabbitmq_user.txt
+  rabbitmq_pass:
+    file: ./infra/secrets/rabbitmq_pass.txt
+  minio_root_user:
+    file: ./infra/secrets/minio_root_user.txt
+  minio_root_password:
+    file: ./infra/secrets/minio_root_password.txt
+  neo4j_auth:
+    file: ./infra/secrets/neo4j_auth.txt
+  jwt_secret:
+    file: ./infra/secrets/jwt_secret.txt
+  cdp_api_key_name:
+    file: ./infra/secrets/cdp_api_key_name.txt
+  cdp_api_key_private:
+    file: ./infra/secrets/cdp_api_key_private.txt
+  relayer_private_key:
+    file: ./infra/secrets/relayer_private_key.txt
+  twilio_account_sid:
+    file: ./infra/secrets/twilio_account_sid.txt
+  twilio_auth_token:
+    file: ./infra/secrets/twilio_auth_token.txt
+  sendgrid_api_key:
+    file: ./infra/secrets/sendgrid_api_key.txt
+  grafana_admin_password:
+    file: ./infra/secrets/grafana_admin_password.txt
+  neo4j_user:
+    file: ./infra/secrets/neo4j_user.txt
+  neo4j_password:
+    file: ./infra/secrets/neo4j_password.txt
+
+volumes:
+  pgdata:
+  redisdata:
+  rabbitmqdata:
+  miniodata:
+  ipfsdata:
+  qdrantdata:
+  neo4jdata:
+  prometheusdata:
+  grafanadata:
+  tempodata:
+  lokidata:
+  letsencrypt:
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge

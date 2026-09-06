@@ -1,0 +1,162 @@
+[
+  {"type": "constructor", "inputs": [
+    {"name": "agentNFTAddress", "type": "address"},
+    {"name": "tbaRegistryAddress", "type": "address"},
+    {"name": "tbaImplementationAddress", "type": "address"},
+    {"name": "capabilityRegistryAddress", "type": "address"},
+    {"name": "admin", "type": "address"}
+  ], "stateMutability": "nonpayable"},
+
+  {"type": "function", "name": "DEFAULT_ADMIN_ROLE", "inputs": [], "outputs": [{"type": "bytes32"}], "stateMutability": "view"},
+  {"type": "function", "name": "REGISTRAR_ROLE", "inputs": [], "outputs": [{"type": "bytes32"}], "stateMutability": "view"},
+
+  {"type": "function", "name": "registerAgent", "stateMutability": "nonpayable", "inputs": [
+    {"name": "nftId", "type": "uint256"}, {"name": "owner", "type": "address"},
+    {"name": "name", "type": "string"}, {"name": "persona", "type": "string"},
+    {"name": "capabilities", "type": "uint256"}, {"name": "modelVersion", "type": "string"},
+    {"name": "metadataURI", "type": "string"}, {"name": "endpoint", "type": "string"}
+  ], "outputs": []},
+
+  {"type": "function", "name": "provisionAccount", "stateMutability": "nonpayable",
+    "inputs": [{"name": "nftId", "type": "uint256"}, {"name": "salt", "type": "bytes32"}], "outputs": []},
+
+  {"type": "function", "name": "activate", "stateMutability": "nonpayable", "inputs": [{"name": "nftId", "type": "uint256"}], "outputs": []},
+  {"type": "function", "name": "suspend", "stateMutability": "nonpayable", "inputs": [{"name": "nftId", "type": "uint256"}], "outputs": []},
+  {"type": "function", "name": "reactivate", "stateMutability": "nonpayable", "inputs": [{"name": "nftId", "type": "uint256"}], "outputs": []},
+  {"type": "function", "name": "deprecate", "stateMutability": "nonpayable", "inputs": [{"name": "nftId", "type": "uint256"}], "outputs": []},
+  {"type": "function", "name": "archive", "stateMutability": "nonpayable", "inputs": [{"name": "nftId", "type": "uint256"}], "outputs": []},
+
+  {"type": "function", "name": "grantCapability", "stateMutability": "nonpayable",
+    "inputs": [{"name": "nftId", "type": "uint256"}, {"name": "capability", "type": "uint256"}], "outputs": []},
+  {"type": "function", "name": "revokeCapability", "stateMutability": "nonpayable",
+    "inputs": [{"name": "nftId", "type": "uint256"}, {"name": "capability", "type": "uint256"}], "outputs": []},
+  {"type": "function", "name": "hasCapability", "stateMutability": "view",
+    "inputs": [{"name": "nftId", "type": "uint256"}, {"name": "capability", "type": "uint256"}], "outputs": [{"type": "bool"}]},
+
+  {"type": "function", "name": "recordAttestation", "stateMutability": "nonpayable", "inputs": [
+    {"name": "nftId", "type": "uint256"}, {"name": "verifierType", "type": "uint8"},
+    {"name": "verifierContract", "type": "address"}, {"name": "attestationHash", "type": "bytes32"}
+  ], "outputs": []},
+
+  {"type": "function", "name": "getAttestation", "stateMutability": "view",
+    "inputs": [{"name": "nftId", "type": "uint256"}],
+    "outputs": [{"type": "tuple", "components": [
+      {"name": "verifierType", "type": "uint8"}, {"name": "verifierContract", "type": "address"},
+      {"name": "lastAttestationHash", "type": "bytes32"}, {"name": "lastAttestedAt", "type": "uint64"}
+    ]}]},
+
+  {"type": "function", "name": "syncOwner", "stateMutability": "nonpayable",
+    "inputs": [{"name": "nftId", "type": "uint256"}, {"name": "newOwner", "type": "address"}], "outputs": []},
+  {"type": "function", "name": "updateEndpoint", "stateMutability": "nonpayable",
+    "inputs": [{"name": "nftId", "type": "uint256"}, {"name": "endpoint", "type": "string"}], "outputs": []},
+
+  {"type": "function", "name": "setModules", "stateMutability": "nonpayable", "inputs": [
+    {"name": "policyEngineAddress", "type": "address"}, {"name": "revenueTrackerAddress", "type": "address"},
+    {"name": "marketplaceAddress", "type": "address"}
+  ], "outputs": []},
+
+  {"type": "function", "name": "getIdentity", "stateMutability": "view",
+    "inputs": [{"name": "nftId", "type": "uint256"}],
+    "outputs": [{"type": "tuple", "components": [
+      {"name": "name", "type": "string"}, {"name": "persona", "type": "string"},
+      {"name": "creator", "type": "address"}, {"name": "version", "type": "uint32"}, {"name": "createdAt", "type": "uint64"}
+    ]}]},
+
+  {"type": "function", "name": "getAgent", "stateMutability": "view",
+    "inputs": [{"name": "nftId", "type": "uint256"}],
+    "outputs": [{"type": "tuple", "components": [
+      {"name": "owner", "type": "address"}, {"name": "capabilities", "type": "uint256"},
+      {"name": "modelVersion", "type": "string"}, {"name": "metadataURI", "type": "string"},
+      {"name": "endpoint", "type": "string"}, {"name": "tokenBoundAccount", "type": "address"},
+      {"name": "state", "type": "uint8"}
+    ]}]},
+
+  {"type": "function", "name": "totalAgents", "stateMutability": "view", "inputs": [], "outputs": [{"type": "uint256"}]},
+  {"type": "function", "name": "getAgentsPage", "stateMutability": "view",
+    "inputs": [{"name": "offset", "type": "uint256"}, {"name": "limit", "type": "uint256"}],
+    "outputs": [{"name": "nftIds", "type": "uint256[]"}]},
+
+  {"type": "function", "name": "pause", "stateMutability": "nonpayable", "inputs": [], "outputs": []},
+  {"type": "function", "name": "unpause", "stateMutability": "nonpayable", "inputs": [], "outputs": []},
+  {"type": "function", "name": "paused", "stateMutability": "view", "inputs": [], "outputs": [{"type": "bool"}]},
+
+  {"type": "function", "name": "hasRole", "stateMutability": "view",
+    "inputs": [{"name": "role", "type": "bytes32"}, {"name": "account", "type": "address"}], "outputs": [{"type": "bool"}]},
+  {"type": "function", "name": "grantRole", "stateMutability": "nonpayable",
+    "inputs": [{"name": "role", "type": "bytes32"}, {"name": "account", "type": "address"}], "outputs": []},
+  {"type": "function", "name": "revokeRole", "stateMutability": "nonpayable",
+    "inputs": [{"name": "role", "type": "bytes32"}, {"name": "account", "type": "address"}], "outputs": []},
+  {"type": "function", "name": "renounceRole", "stateMutability": "nonpayable",
+    "inputs": [{"name": "role", "type": "bytes32"}, {"name": "callerConfirmation", "type": "address"}], "outputs": []},
+  {"type": "function", "name": "getRoleAdmin", "stateMutability": "view",
+    "inputs": [{"name": "role", "type": "bytes32"}], "outputs": [{"type": "bytes32"}]},
+  {"type": "function", "name": "supportsInterface", "stateMutability": "view",
+    "inputs": [{"name": "interfaceId", "type": "bytes4"}], "outputs": [{"type": "bool"}]},
+
+  {"type": "function", "name": "agentNFT", "stateMutability": "view", "inputs": [], "outputs": [{"type": "address"}]},
+  {"type": "function", "name": "tbaRegistry", "stateMutability": "view", "inputs": [], "outputs": [{"type": "address"}]},
+  {"type": "function", "name": "tbaImplementation", "stateMutability": "view", "inputs": [], "outputs": [{"type": "address"}]},
+  {"type": "function", "name": "capabilityRegistry", "stateMutability": "view", "inputs": [], "outputs": [{"type": "address"}]},
+  {"type": "function", "name": "policyEngine", "stateMutability": "view", "inputs": [], "outputs": [{"type": "address"}]},
+  {"type": "function", "name": "revenueTracker", "stateMutability": "view", "inputs": [], "outputs": [{"type": "address"}]},
+  {"type": "function", "name": "marketplace", "stateMutability": "view", "inputs": [], "outputs": [{"type": "address"}]},
+
+  {"type": "event", "name": "AgentRegistered", "anonymous": false, "inputs": [
+    {"name": "nftId", "type": "uint256", "indexed": true}, {"name": "creator", "type": "address", "indexed": true},
+    {"name": "owner", "type": "address", "indexed": true}, {"name": "name", "type": "string", "indexed": false}
+  ]},
+  {"type": "event", "name": "LifecycleChanged", "anonymous": false, "inputs": [
+    {"name": "nftId", "type": "uint256", "indexed": true},
+    {"name": "from", "type": "uint8", "indexed": false}, {"name": "to", "type": "uint8", "indexed": false}
+  ]},
+  {"type": "event", "name": "TokenBoundAccountCreated", "anonymous": false, "inputs": [
+    {"name": "nftId", "type": "uint256", "indexed": true}, {"name": "account", "type": "address", "indexed": false}
+  ]},
+  {"type": "event", "name": "CapabilityGranted", "anonymous": false, "inputs": [
+    {"name": "nftId", "type": "uint256", "indexed": true}, {"name": "capability", "type": "uint256", "indexed": false}
+  ]},
+  {"type": "event", "name": "CapabilityRevoked", "anonymous": false, "inputs": [
+    {"name": "nftId", "type": "uint256", "indexed": true}, {"name": "capability", "type": "uint256", "indexed": false}
+  ]},
+  {"type": "event", "name": "AttestationRecorded", "anonymous": false, "inputs": [
+    {"name": "nftId", "type": "uint256", "indexed": true}, {"name": "verifierType", "type": "uint8", "indexed": false},
+    {"name": "attestationHash", "type": "bytes32", "indexed": false}
+  ]},
+  {"type": "event", "name": "OwnerSynced", "anonymous": false, "inputs": [
+    {"name": "nftId", "type": "uint256", "indexed": true}, {"name": "newOwner", "type": "address", "indexed": false}
+  ]},
+  {"type": "event", "name": "EndpointUpdated", "anonymous": false, "inputs": [
+    {"name": "nftId", "type": "uint256", "indexed": true}, {"name": "endpoint", "type": "string", "indexed": false}
+  ]},
+  {"type": "event", "name": "ModulesUpdated", "anonymous": false, "inputs": [
+    {"name": "policyEngine", "type": "address", "indexed": false}, {"name": "revenueTracker", "type": "address", "indexed": false},
+    {"name": "marketplace", "type": "address", "indexed": false}
+  ]},
+  {"type": "event", "name": "RoleAdminChanged", "anonymous": false, "inputs": [
+    {"name": "role", "type": "bytes32", "indexed": true}, {"name": "previousAdminRole", "type": "bytes32", "indexed": true},
+    {"name": "newAdminRole", "type": "bytes32", "indexed": true}
+  ]},
+  {"type": "event", "name": "RoleGranted", "anonymous": false, "inputs": [
+    {"name": "role", "type": "bytes32", "indexed": true}, {"name": "account", "type": "address", "indexed": true},
+    {"name": "sender", "type": "address", "indexed": true}
+  ]},
+  {"type": "event", "name": "RoleRevoked", "anonymous": false, "inputs": [
+    {"name": "role", "type": "bytes32", "indexed": true}, {"name": "account", "type": "address", "indexed": true},
+    {"name": "sender", "type": "address", "indexed": true}
+  ]},
+  {"type": "event", "name": "Paused", "anonymous": false, "inputs": [{"name": "account", "type": "address", "indexed": false}]},
+  {"type": "event", "name": "Unpaused", "anonymous": false, "inputs": [{"name": "account", "type": "address", "indexed": false}]},
+
+  {"type": "error", "name": "AlreadyRegistered", "inputs": []},
+  {"type": "error", "name": "NotRegistered", "inputs": []},
+  {"type": "error", "name": "NotAgentOwner", "inputs": []},
+  {"type": "error", "name": "InvalidLifecycleTransition", "inputs": []},
+  {"type": "error", "name": "CapabilityNotDefined", "inputs": []},
+  {"type": "error", "name": "CapabilityRequiresElevatedRole", "inputs": [{"name": "riskTier", "type": "uint8"}]},
+  {"type": "error", "name": "AccessControlUnauthorizedAccount", "inputs": [
+    {"name": "account", "type": "address"}, {"name": "neededRole", "type": "bytes32"}
+  ]},
+  {"type": "error", "name": "AccessControlBadConfirmation", "inputs": []},
+  {"type": "error", "name": "EnforcedPause", "inputs": []},
+  {"type": "error", "name": "ExpectedPause", "inputs": []}
+]

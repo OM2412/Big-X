@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+**/secrets/
+**/redis_password.txt
+**/*password*.txt
+**/*secret*
+
+# Node / frontend
+node_modules/
+.next/
+dist/
+build/
+*.tsbuildinfo
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Database
+*.db
+*.sqlite
+
+# Logs
+logs/
+*.log
+
+# Docker / infra
+infra/.terraform
+infra/.terraform.lock.hcl
+agentic-defi-platform/agentic-defi-platform/

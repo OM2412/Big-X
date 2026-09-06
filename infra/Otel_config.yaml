@@ -1,0 +1,76 @@
+# infra/otel-collector-config.yaml
+#
+# Receives traces from every service's traced_span() calls
+# (agents/resilience.py) and metrics from Prometheus scraping, batches
+# them, and exports. This is what turns the no-op traced_span() stubs
+# into real distributed traces without any application code changing.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 512
+
+  # Drops noisy/low-value spans before export — health check polling
+  # (RpcProviderManager's continuous health loop, k8s readiness probes)
+  # would otherwise flood traces with near-zero-value spans.
+  filter/drop_health_checks:
+    traces:
+      span:
+        - 'attributes["http.target"] == "/health"'
+        - 'attributes["http.target"] == "/rpc-status"'
+
+  # Tags every span/metric with which service and environment produced
+  # it — without this, traces from agent-orchestrator and wallet-service
+  # are indistinguishable once they're both flowing through one collector.
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: ${ENVIRONMENT}
+        action: upsert
+
+  # Caps memory before a traffic spike OOM-kills the collector itself —
+  # a collector crash means silent loss of observability at exactly the
+  # moment you need it most (during an incident).
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+exporters:
+  # Real backend — Tempo pairs with the Loki+Grafana stack already in
+  # infra/k8s/logging.yaml, giving one Grafana instance for metrics, logs,
+  # AND traces instead of a fourth separate tool. Swap for Jaeger/
+  # Honeycomb/Datadog if you'd rather use one of those.
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true   # cluster-internal traffic only — see network-policy.yaml's allow-dns-and-monitoring rule restricting who can reach this collector at all
+
+  prometheus:
+    endpoint: 0.0.0.0:8889
+
+  # Kept as a fallback for local dev / debugging a pipeline issue without
+  # needing Tempo running — NOT the primary exporter anymore.
+  logging:
+    verbosity: basic
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/drop_health_checks, resource, batch]
+      exporters: [otlp/tempo, logging]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheus]

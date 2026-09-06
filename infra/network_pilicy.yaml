@@ -1,0 +1,164 @@
+
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: agentic-defi-platform
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+
+---
+# --- Public-facing service ---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-gateway-ingress
+  namespace: agentic-defi-platform
+spec:
+  podSelector: {matchLabels: {app: api-gateway}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: []   # only api-gateway is meant to be reachable from outside the cluster — via ingress.yaml
+      ports: [{port: 8000}]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: wallet-service-ingress
+  namespace: agentic-defi-platform
+spec:
+  podSelector: {matchLabels: {app: wallet-service}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app: tool-router}}
+        - podSelector: {matchLabels: {app: agent-orchestrator}}
+        - podSelector: {matchLabels: {app: health-aggregator}}   # needs /rpc-status, not signing itself
+      ports: [{port: 8003}]
+
+---
+# --- Internal services reachable from api-gateway + orchestrator only,
+# never from each other laterally beyond what's actually needed ---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agent-orchestrator-ingress
+  namespace: agentic-defi-platform
+spec:
+  podSelector: {matchLabels: {app: agent-orchestrator}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{podSelector: {matchLabels: {app: api-gateway}}}]
+      ports: [{port: 8001}]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tool-router-ingress
+  namespace: agentic-defi-platform
+spec:
+  podSelector: {matchLabels: {app: tool-router}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{podSelector: {matchLabels: {app: agent-orchestrator}}}]
+      ports: [{port: 8002}]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ai-reasoning-ingress
+  namespace: agentic-defi-platform
+spec:
+  podSelector: {matchLabels: {app: ai-reasoning}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{podSelector: {matchLabels: {app: agent-orchestrator}}}]
+      ports: [{port: 8004}]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-ingress
+  namespace: agentic-defi-platform
+spec:
+  podSelector: {matchLabels: {app: postgres}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app: api-gateway}}
+        - podSelector: {matchLabels: {app: agent-orchestrator}}
+        - podSelector: {matchLabels: {app: tool-router}}
+        - podSelector: {matchLabels: {app: wallet-service}}
+        - podSelector: {matchLabels: {app: ai-reasoning}}
+        - podSelector: {matchLabels: {app: postgres-backup}}
+        - podSelector: {matchLabels: {app: postgres-exporter}}
+      ports: [{port: 5432}]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-ingress
+  namespace: agentic-defi-platform
+spec:
+  podSelector: {matchLabels: {app: redis}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app: wallet-service}}   # NonceManager, SpendLimitsService
+        - podSelector: {matchLabels: {app: agent-orchestrator}}  # TTLCache, capability cache
+        - podSelector: {matchLabels: {app: tool-router}}
+      ports: [{port: 6379}]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rabbitmq-ingress
+  namespace: agentic-defi-platform
+spec:
+  podSelector: {matchLabels: {app: rabbitmq}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app: agent-orchestrator}}
+        - podSelector: {matchLabels: {app: event-listener}}
+        - podSelector: {matchLabels: {app: notification-service}}
+      ports: [{port: 5672}]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-and-observability-egress
+  namespace: agentic-defi-platform
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to: []
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to: [{podSelector: {matchLabels: {app: otel-collector}}}]
+      ports: [{port: 4317}]
+    - to: [{podSelector: {matchLabels: {app: loki}}}]
+      ports: [{port: 3100}]
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: wallet-service-external-egress
+  namespace: agentic-defi-platform
+spec:
+  podSelector: {matchLabels: {app: wallet-service}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]}
+      ports: [{port: 443, protocol: TCP}]   # RPC providers (HTTPS) and CDP's API — no plaintext HTTP egress permitted
